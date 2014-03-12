@@ -120,13 +120,63 @@ public class ContentImageDecoder extends BaseImageDecoder {
             }
 
             if (thumbnail != null) {
-                overlayCenter(thumbnail, mContext, mResourceId);
+                overlayLeft(thumbnail, mContext, mResourceId);
             }
             return thumbnail;
         }
         else {
             return super.decode(info);
         }
+    }
+
+    /*
+    public static Bitmap loadBitmapFromView(View v, int width, int height) {
+        width = v.getLayoutParams().width;
+        height = v.getLayoutParams().height;
+        Bitmap b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        v.setDrawingCacheEnabled(false);
+        Canvas c = new Canvas(b);
+        v.layout(v.getLeft(), v.getTop(), v.getRight(), v.getBottom());
+        v.draw(c);
+        return b;
+    }
+
+    protected static Bitmap overlayLeft(Bitmap bitmap, Context context, int resourceId) {
+        if (resourceId <= 0) return bitmap;
+        LayoutInflater inflater = LayoutInflater.from(context);
+        View layout = inflater.inflate(R.layout.video, null);
+        layout.setDrawingCacheEnabled(true);
+        ImageView image = (ImageView) layout.findViewById(R.id.image);
+        image.setImageBitmap(bitmap);
+        ImageView overlay = (ImageView) layout.findViewById(R.id.overlay);
+        overlay.setImageResource(resourceId);
+        Bitmap b = loadBitmapFromView(layout, bitmap.getWidth(), bitmap.getHeight());
+
+        //bitmap.recycle();
+        //bitmap = null;
+        return b;
+    }
+    */
+
+    protected static void overlayLeft(Bitmap bitmap, Context context, int resourceId) {
+        if (resourceId <= 0) return;
+        Bitmap overlay = BitmapFactory.decodeResource(context.getResources(),
+                resourceId);
+
+        float scale = (float) bitmap.getHeight() / overlay.getHeight();
+        int w = Math.round(scale * overlay.getWidth()) / 2;
+        int h = Math.round(scale * overlay.getHeight()) / 2;
+        Bitmap scaledOverlay = scaleBitmap(overlay, w, h);
+
+        final Rect rect = new Rect(0, 0, w, h);
+        final Canvas canvas = new Canvas(bitmap);
+        canvas.drawBitmap(scaledOverlay, null, rect, null);
+        canvas.drawBitmap(scaledOverlay, null, new Rect(0, h, w, h * 2), null);
+
+        overlay.recycle();
+        overlay = null;
+        scaledOverlay.recycle();
+        scaledOverlay = null;
     }
 
     protected static void overlayCenter(Bitmap bitmap, Context context, int resourceId) {
@@ -227,7 +277,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
         return null;
     }
 
-    private Bitmap scaleBitmap(Bitmap origBitmap, int width, int height) {
+    private static Bitmap scaleBitmap(Bitmap origBitmap, int width, int height) {
         float scale = Math.min(
                 ((float)width) / ((float)origBitmap.getWidth()),
                 ((float)height) / ((float)origBitmap.getHeight())
