@@ -29,7 +29,7 @@ import android.net.Uri;
 import android.provider.MediaStore;
 import android.provider.MediaStore.Images.ImageColumns;
 import android.text.TextUtils;
-import android.util.LruCache;
+import android.support.v4.util.LruCache;
 
 import com.nostra13.universalimageloader.core.assist.ImageSize;
 import com.nostra13.universalimageloader.core.download.ImageDownloader.Scheme;
@@ -297,7 +297,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
 
     private static LruCache<String, Integer> getRotationCache() {
         if (sRotationCache == null) {
-            sRotationCache = new LruCache<String, Integer>(256 * K);
+            sRotationCache = new LruCache<String, Integer>(16 * K);
         }
         return sRotationCache;
     }
@@ -306,7 +306,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
     protected ImageFileInfo defineImageSizeAndRotation(InputStream imageStream, ImageDecodingInfo decodingInfo) throws IOException {
         String imageUri = decodingInfo.getImageUri();
 
-        if (Scheme.ofUri(imageUri) == Scheme.FILE) {
+        if (Scheme.ofUri(imageUri) == Scheme.FILE || android.os.Build.VERSION.SDK_INT <= 10) {
             return super.defineImageSizeAndRotation(imageStream, decodingInfo);
         }
         Options options = new Options();
