@@ -33,6 +33,7 @@ import android.support.v4.util.LruCache;
 
 import com.nostra13.universalimageloader.core.assist.ImageSize;
 import com.nostra13.universalimageloader.core.download.ImageDownloader.Scheme;
+import com.nostra13.universalimageloader.utils.L;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -96,36 +97,44 @@ public class ContentImageDecoder extends BaseImageDecoder {
     }
 
     @Override
-    public Bitmap decode(ImageDecodingInfo info) throws IOException {
-        if (TextUtils.isEmpty(info.getImageKey())) {
-            return null;
-        }
-
-        String cleanedUriString = cleanUriString(info.getImageKey());
-        Uri uri = Uri.parse(cleanedUriString);
+    public Bitmap decode(ImageDecodingInfo decodingInfo) throws IOException {
+        String imageUri = decodingInfo.getImageUri();
+        Uri uri = Uri.parse(imageUri);
         if (isVideoUri(uri)) {
-            int width = info.getTargetSize().getWidth();
-            int height = info.getTargetSize().getHeight();
-            Bitmap thumbnail = makeVideoThumbnailFromMediaMetadataRetriever(
-                    width, height, getMediaMetadataRetriever(mContext, uri));
+            int width = decodingInfo.getTargetSize().getWidth();
+            int height = decodingInfo.getTargetSize().getHeight();
+            Log8.d(width, height);
+            Bitmap decodedBitmap = makeVideoThumbnailFromMediaMetadataRetriever(
+                    getMediaMetadataRetriever(mContext, uri));
             /*
-            thumbnail = makeVideoThumbnailFromMediaMetadataRetriever(
-                    width, height, getMediaMetadataRetriever(getVideoFilePath(uri)));
+            decodedBitmap = makeVideoThumbnailFromMediaMetadataRetriever(
+                    getMediaMetadataRetriever(getVideoFilePath(uri)));
             */
-            Log8.d(thumbnail);
-            if (thumbnail == null) {
+            Log8.d(decodedBitmap);
+            if (decodedBitmap == null) {
                 Log8.d(getVideoFilePath(uri));
-                thumbnail = makeVideoThumbnail(width, height, getVideoFilePath(uri));
-                Log8.d(thumbnail);
+                decodedBitmap = makeVideoThumbnailFromMediaStore(getVideoFilePath(uri));
+                Log8.d(decodedBitmap);
             }
 
-            if (thumbnail != null) {
-                overlayLeft(thumbnail, mContext, mResourceId);
+            if (decodedBitmap == null) {
+                L.e(ERROR_CANT_DECODE_IMAGE, decodingInfo.getImageKey());
             }
-            return thumbnail;
+            else {
+                Log8.d(decodedBitmap.getWidth(), decodedBitmap.getHeight());
+                ExifInfo exif = new ExifInfo();
+                ImageFileInfo imageInfo = new ImageFileInfo(new ImageSize(width, height, exif.rotation), exif);
+                decodedBitmap = considerExactScaleAndOrientaiton(decodedBitmap, decodingInfo, imageInfo.exif.rotation,
+                        imageInfo.exif.flipHorizontal);
+                Log8.d(decodedBitmap.getWidth(), decodedBitmap.getHeight());
+                overlayCenter(decodedBitmap, mContext, mResourceId);
+                Log8.d(decodedBitmap.getWidth(), decodedBitmap.getHeight());
+            }
+
+            return decodedBitmap;
         }
         else {
-            return super.decode(info);
+            return super.decode(decodingInfo);
         }
     }
 
@@ -206,16 +215,16 @@ public class ContentImageDecoder extends BaseImageDecoder {
         overlay = null;
     }
 
-    private Bitmap makeVideoThumbnail(int width, int height, String filePath) {
+    private Bitmap makeVideoThumbnailFromMediaStore(String filePath) {
         if (TextUtils.isEmpty(filePath)) return null;
         Bitmap thumbnail = ThumbnailUtils.createVideoThumbnail(filePath, MediaStore.Video.Thumbnails.MINI_KIND);
-        if (thumbnail == null) return null;
-        Bitmap scaledThumb = scaleBitmap(thumbnail, width, height);
-        thumbnail.recycle();
-        return scaledThumb;
+        if (thumbnail != null) {
+            Log8.d(thumbnail.getWidth(), thumbnail.getHeight());
+        }
+        return thumbnail;
     }
 
-    private Bitmap makeVideoThumbnailFromMediaMetadataRetriever(int width, int height, MediaMetadataRetriever retriever) {
+    private Bitmap makeVideoThumbnailFromMediaMetadataRetriever(MediaMetadataRetriever retriever) {
         if (retriever == null) return null;
 
         Bitmap thumbnail = null;
@@ -224,6 +233,9 @@ public class ContentImageDecoder extends BaseImageDecoder {
         if (picture != null) {
             Log8.d();
             thumbnail = BitmapFactory.decodeByteArray(picture, 0, picture.length);
+            if (thumbnail != null) {
+                Log8.d(thumbnail.getWidth(), thumbnail.getHeight());
+            }
         } else {
             Log8.d();
         }
@@ -231,6 +243,9 @@ public class ContentImageDecoder extends BaseImageDecoder {
         if (thumbnail == null) {
             Log8.d();
             thumbnail = retriever.getFrameAtTime();
+            if (thumbnail != null) {
+                Log8.d(thumbnail.getWidth(), thumbnail.getHeight());
+            }
         }
 
         if (thumbnail == null) {
@@ -238,9 +253,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
             return null;
         }
 
-        Bitmap scaledThumb = scaleBitmap(thumbnail, width, height);
-        thumbnail.recycle();
-        return scaledThumb;
+        return thumbnail;
     }
 
     private static MediaMetadataRetriever getMediaMetadataRetriever(String filePath) {
@@ -313,20 +326,25 @@ public class ContentImageDecoder extends BaseImageDecoder {
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeStream(imageStream, null, options);
 
-        ExifInfo exif;
+        ExifInfo exif = getExifInfo(imageUri, decodingInfo, null);
 
-        Integer rotation = getRotationCache().get(imageUri);
+        return new ImageFileInfo(new ImageSize(options.outWidth, options.outHeight, exif.rotation), exif);
+    }
+
+    protected ExifInfo getExifInfo(String uri, ImageDecodingInfo decodingInfo, Object extra) {
+        ExifInfo exif;
+        Integer rotation = getRotationCache().get(uri);
         if (rotation == null) {
             if (decodingInfo.shouldConsiderExifParams()) {
-                exif = getExifInfo(imageUri, null);
-                getRotationCache().put(imageUri, exif.rotation);
+                exif = getExifInfo(uri, extra);
+                getRotationCache().put(uri, exif.rotation);
             } else {
                 exif = new ExifInfo();
             }
         } else {
             exif = new ExifInfo(rotation, false);
         }
-        return new ImageFileInfo(new ImageSize(options.outWidth, options.outHeight, exif.rotation), exif);
+        return exif;
     }
 
     protected ExifInfo getExifInfo(String imageUri, Object extra) {
