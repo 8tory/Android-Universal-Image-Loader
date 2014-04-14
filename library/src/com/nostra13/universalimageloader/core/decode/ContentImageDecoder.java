@@ -58,6 +58,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
 
     public static final int K = 1024;
     private static LruCache<String, Integer> sRotationCache;
+    private static LruCache<String, Boolean> sVideoCache;
 
     private static final boolean DEBUG = false;
     private static class Log8 {
@@ -100,6 +101,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
     public Bitmap decode(ImageDecodingInfo decodingInfo) throws IOException {
         String imageUri = decodingInfo.getImageUri();
         Uri uri = Uri.parse(imageUri);
+
         if (isVideoUri(uri)) {
             int width = decodingInfo.getTargetSize().getWidth();
             int height = decodingInfo.getTargetSize().getHeight();
@@ -127,7 +129,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
                 decodedBitmap = considerExactScaleAndOrientaiton(decodedBitmap, decodingInfo, imageInfo.exif.rotation,
                         imageInfo.exif.flipHorizontal);
                 Log8.d(decodedBitmap.getWidth(), decodedBitmap.getHeight());
-                overlayCenter(decodedBitmap, mContext, mResourceId);
+                if (mResourceId > 0) overlayCenter(decodedBitmap, mContext, mResourceId);
                 Log8.d(decodedBitmap.getWidth(), decodedBitmap.getHeight());
             }
 
@@ -271,8 +273,13 @@ public class ContentImageDecoder extends BaseImageDecoder {
     }
 
     private boolean isVideoUri(Uri uri) {
-        String type = getContentResolver().getType(uri);
-        return !TextUtils.isEmpty(type) && type.startsWith("video/");
+        Boolean isVideo = getVideoCache().get(uri.toString());
+        if (isVideo == null) {
+            String type = getContentResolver().getType(uri);
+            isVideo = new Boolean(!TextUtils.isEmpty(type) && type.startsWith("video/"));
+            getVideoCache().put(uri.toString(), isVideo);
+        }
+        return isVideo;
     }
 
     private String getVideoFilePath(Uri uri) {
@@ -313,6 +320,13 @@ public class ContentImageDecoder extends BaseImageDecoder {
             sRotationCache = new LruCache<String, Integer>(16 * K);
         }
         return sRotationCache;
+    }
+
+    private static LruCache<String, Boolean> getVideoCache() {
+        if (sVideoCache == null) {
+            sVideoCache = new LruCache<String, Boolean>(16 * K);
+        }
+        return sVideoCache;
     }
 
     @Override
