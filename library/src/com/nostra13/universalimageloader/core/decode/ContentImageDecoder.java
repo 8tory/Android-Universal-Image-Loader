@@ -317,14 +317,14 @@ public class ContentImageDecoder extends BaseImageDecoder {
 
     private static LruCache<String, Integer> getRotationCache() {
         if (sRotationCache == null) {
-            sRotationCache = new LruCache<String, Integer>(16 * K);
+            sRotationCache = new LruCache<String, Integer>(1 * K);
         }
         return sRotationCache;
     }
 
     private static LruCache<String, Boolean> getVideoCache() {
         if (sVideoCache == null) {
-            sVideoCache = new LruCache<String, Boolean>(16 * K);
+            sVideoCache = new LruCache<String, Boolean>(1 * K);
         }
         return sVideoCache;
     }
