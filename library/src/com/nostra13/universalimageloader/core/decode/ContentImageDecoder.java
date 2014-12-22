@@ -27,6 +27,7 @@ import android.media.MediaMetadataRetriever;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
 import android.provider.MediaStore;
+import android.provider.MediaStore.Images;
 import android.provider.MediaStore.Images.ImageColumns;
 import android.text.TextUtils;
 import android.support.v4.util.LruCache;
@@ -35,6 +36,7 @@ import com.nostra13.universalimageloader.core.assist.ImageSize;
 import com.nostra13.universalimageloader.core.download.ImageDownloader.Scheme;
 import com.nostra13.universalimageloader.utils.L;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -134,9 +136,43 @@ public class ContentImageDecoder extends BaseImageDecoder {
             }
 
             return decodedBitmap;
-        }
-        else {
+        } else {
+            if ("content".equals(uri.getScheme())) {
+                int width = decodingInfo.getTargetSize().getWidth();
+                int height = decodingInfo.getTargetSize().getHeight();
+                int maxLength = Math.max(width, height);
+
+                if (maxLength < 384) {
+                    decodingInfo.setImageUri(getThumbnailUri(
+                            mContext, Images.Thumbnails.MINI_KIND, uri).toString());
+                } else if (maxLength < 96) {
+                    decodingInfo.setImageUri(getThumbnailUri(
+                            mContext, Images.Thumbnails.MICRO_KIND, uri).toString());
+                }
+            }
             return super.decode(decodingInfo);
+        }
+    }
+
+    public Uri getThumbnailUri(Context context, int kind, Uri contentUri) {
+        String uri = null;
+
+        Cursor cursor = Images.Thumbnails.queryMiniThumbnail(context.getContentResolver(),
+                Long.valueOf(contentUri.getLastPathSegment()), kind, null);
+        if (cursor == null) {
+            return contentUri;
+        }
+
+        try {
+            if (cursor.getCount() > 0) {
+                cursor.moveToFirst();
+                uri = cursor.getString(cursor.getColumnIndex(Images.Thumbnails.DATA));
+            }
+            return Uri.fromFile(new File(uri));
+        } catch (Exception e) {
+            return contentUri;
+        } finally {
+            cursor.close();
         }
     }
 
