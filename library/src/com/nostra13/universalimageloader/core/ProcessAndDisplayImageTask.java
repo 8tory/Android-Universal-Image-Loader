@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2011-2013 Sergey Tarasevich
+ * Copyright 2011-2014 Sergey Tarasevich
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import com.nostra13.universalimageloader.utils.L;
  * @author Sergey Tarasevich (nostra13[at]gmail[dot]com)
  * @since 1.8.0
  */
-class ProcessAndDisplayImageTask implements Runnable {
+final class ProcessAndDisplayImageTask implements Runnable {
 
 	private static final String LOG_POSTPROCESS_IMAGE = "PostProcess image before displaying [%s]";
 
@@ -48,13 +48,12 @@ class ProcessAndDisplayImageTask implements Runnable {
 
 	@Override
 	public void run() {
-		if (engine.configuration.writeLogs) L.d(LOG_POSTPROCESS_IMAGE, imageLoadingInfo.memoryCacheKey);
+		L.d(LOG_POSTPROCESS_IMAGE, imageLoadingInfo.memoryCacheKey);
 
 		BitmapProcessor processor = imageLoadingInfo.options.getPostProcessor();
 		Bitmap processedBitmap = processor.process(bitmap);
 		DisplayBitmapTask displayBitmapTask = new DisplayBitmapTask(processedBitmap, imageLoadingInfo, engine,
 				LoadedFrom.MEMORY_CACHE);
-		displayBitmapTask.setLoggingEnabled(engine.configuration.writeLogs);
 		LoadAndDisplayImageTask.runTask(displayBitmapTask, imageLoadingInfo.options.isSyncLoading(), handler, engine);
 	}
 }

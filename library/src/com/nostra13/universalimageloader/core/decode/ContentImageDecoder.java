@@ -128,7 +128,7 @@ public class ContentImageDecoder extends BaseImageDecoder {
                 Log8.d(decodedBitmap.getWidth(), decodedBitmap.getHeight());
                 ExifInfo exif = new ExifInfo();
                 ImageFileInfo imageInfo = new ImageFileInfo(new ImageSize(width, height, exif.rotation), exif);
-                decodedBitmap = considerExactScaleAndOrientaiton(decodedBitmap, decodingInfo, imageInfo.exif.rotation,
+                decodedBitmap = considerExactScaleAndOrientatiton(decodedBitmap, decodingInfo, imageInfo.exif.rotation,
                         imageInfo.exif.flipHorizontal);
                 Log8.d(decodedBitmap.getWidth(), decodedBitmap.getHeight());
                 if (mResourceId > 0) overlayCenter(decodedBitmap, mContext, mResourceId);

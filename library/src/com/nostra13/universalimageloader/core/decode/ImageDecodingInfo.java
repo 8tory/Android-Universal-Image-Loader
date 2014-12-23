@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013 Sergey Tarasevich
+ * Copyright 2013-2014 Sergey Tarasevich
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nostra13.universalimageloader.core.decode;
 import android.annotation.TargetApi;
 import android.graphics.BitmapFactory.Options;
 import android.os.Build;
+
 import com.nostra13.universalimageloader.core.DisplayImageOptions;
 import com.nostra13.universalimageloader.core.assist.ImageScaleType;
 import com.nostra13.universalimageloader.core.assist.ImageSize;
@@ -34,6 +35,7 @@ public class ImageDecodingInfo {
 
 	private final String imageKey;
 	private String imageUri;
+	private final String originalImageUri;
 	private final ImageSize targetSize;
 
 	private final ImageScaleType imageScaleType;
@@ -45,10 +47,11 @@ public class ImageDecodingInfo {
 	private final boolean considerExifParams;
 	private final Options decodingOptions;
 
-	public ImageDecodingInfo(String imageKey, String imageUri, ImageSize targetSize, ViewScaleType viewScaleType,
+	public ImageDecodingInfo(String imageKey, String imageUri, String originalImageUri, ImageSize targetSize, ViewScaleType viewScaleType,
 							 ImageDownloader downloader, DisplayImageOptions displayOptions) {
 		this.imageKey = imageKey;
 		this.imageUri = imageUri;
+		this.originalImageUri = originalImageUri;
 		this.targetSize = targetSize;
 
 		this.imageScaleType = displayOptions.getImageScaleType();
@@ -94,13 +97,18 @@ public class ImageDecodingInfo {
 		return imageKey;
 	}
 
-	/** @return Image URI for decoding (usually image from disc cache) */
+	/** @return Image URI for decoding (usually image from disk cache) */
 	public String getImageUri() {
 		return imageUri;
 	}
 
 	public void setImageUri(String uri) {
 		imageUri = uri;
+	}
+
+	/** @return The original image URI which was passed to ImageLoader */
+	public String getOriginalImageUri() {
+		return originalImageUri;
 	}
 
 	/**
