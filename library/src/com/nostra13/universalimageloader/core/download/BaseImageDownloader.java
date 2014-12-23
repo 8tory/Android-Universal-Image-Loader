@@ -21,6 +21,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.media.ThumbnailUtils;
+import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.ContactsContract;
@@ -62,7 +63,7 @@ public class BaseImageDownloader implements ImageDownloader {
 
 	protected static final int MAX_REDIRECT_COUNT = 5;
 
-	protected static final String CONTENT_CONTACTS_URI_PREFIX = "content://com.android.contacts/";
+	protected  static final String CONTENT_CONTACTS_URI_PREFIX = "content://com.android.contacts/";
 
 	private static final String ERROR_UNSUPPORTED_SCHEME = "UIL doesn't support scheme(protocol) by default [%s]. " + "You should implement this support yourself (BaseImageDownloader.getStreamFromOtherSource(...))";
 
@@ -249,7 +250,12 @@ public class BaseImageDownloader implements ImageDownloader {
 	protected InputStream getStreamFromDrawable(String imageUri, Object extra) {
 		String drawableIdString = Scheme.DRAWABLE.crop(imageUri);
 		int drawableId = Integer.parseInt(drawableIdString);
-		return context.getResources().openRawResource(drawableId);
+		BitmapDrawable drawable = (BitmapDrawable) context.getResources().getDrawable(drawableId);
+		Bitmap bitmap = drawable.getBitmap();
+
+		ByteArrayOutputStream os = new ByteArrayOutputStream();
+		bitmap.compress(CompressFormat.PNG, 0, os);
+		return new ByteArrayInputStream(os.toByteArray());
 	}
 
 	/**
