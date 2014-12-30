@@ -64,6 +64,7 @@ final class LoadAndDisplayImageTask implements Runnable, IoUtils.CopyListener {
 	private static final String LOG_POSTPROCESS_IMAGE = "PostProcess image before displaying [%s]";
 	private static final String LOG_CACHE_IMAGE_IN_MEMORY = "Cache image in memory [%s]";
 	private static final String LOG_CACHE_IMAGE_ON_DISK = "Cache image on disk [%s]";
+	private static final String LOG_CACHE_BITMAP_ON_DISK = "Cache bitmap on disk [%s]";
 	private static final String LOG_PROCESS_IMAGE_BEFORE_CACHE_ON_DISK = "Process image before cache on disk [%s]";
 	private static final String LOG_TASK_CANCELLED_IMAGEAWARE_REUSED = "ImageAware is reused for another image. Task is cancelled. [%s]";
 	private static final String LOG_TASK_CANCELLED_IMAGEAWARE_COLLECTED = "ImageAware was collected by GC. Task is cancelled. [%s]";
@@ -92,9 +93,6 @@ final class LoadAndDisplayImageTask implements Runnable, IoUtils.CopyListener {
 	final ImageLoadingListener listener;
 	final ImageLoadingProgressListener progressListener;
 	private final boolean syncLoading;
-
-	// State vars
-	private LoadedFrom loadedFrom = LoadedFrom.NETWORK;
 
 	public LoadAndDisplayImageTask(ImageLoaderEngine engine, ImageLoadingInfo imageLoadingInfo, Handler handler) {
 		this.engine = engine;
@@ -127,53 +125,44 @@ final class LoadAndDisplayImageTask implements Runnable, IoUtils.CopyListener {
 			L.d(LOG_WAITING_FOR_IMAGE_LOADED, memoryCacheKey);
 		}
 
+		Bitmap bitmap = null;
+		LoadingInfo info = new LoadingInfo(uri, uri, LoadedFrom.NETWORK);
+
 		loadFromUriLock.lock();
-		Bitmap bmp;
 		try {
 			checkTaskNotActual();
 
-			bmp = configuration.memoryCache.get(memoryCacheKey);
-			if (bmp == null || bmp.isRecycled()) {
-				bmp = tryLoadBitmap();
-				if (bmp == null) return; // listener callback already was fired
-
-				checkTaskNotActual();
-				checkTaskInterrupted();
-
-				if (options.shouldPreProcess()) {
-					L.d(LOG_PREPROCESS_IMAGE, memoryCacheKey);
-					bmp = options.getPreProcessor().process(bmp);
-					if (bmp == null) {
-						L.e(ERROR_PRE_PROCESSOR_NULL, memoryCacheKey);
-					}
-				}
-
-				if (bmp != null && options.isCacheInMemory()) {
-					L.d(LOG_CACHE_IMAGE_IN_MEMORY, memoryCacheKey);
-					configuration.memoryCache.put(memoryCacheKey, bmp);
-				}
-			} else {
-				loadedFrom = LoadedFrom.MEMORY_CACHE;
-				L.d(LOG_GET_IMAGE_FROM_MEMORY_CACHE_AFTER_WAITING, memoryCacheKey);
+			bitmap = loadImage(info);
+			if (bitmap == null) {
+				fireFailEvent(FailType.UNKNOWN, new Exception());
+				return;
 			}
 
-			if (bmp != null && options.shouldPostProcess()) {
-				L.d(LOG_POSTPROCESS_IMAGE, memoryCacheKey);
-				bmp = options.getPostProcessor().process(bmp);
-				if (bmp == null) {
-					L.e(ERROR_POST_PROCESSOR_NULL, memoryCacheKey);
-				}
-			}
 			checkTaskNotActual();
 			checkTaskInterrupted();
 		} catch (TaskCancelledException e) {
 			fireCancelEvent();
 			return;
+		} catch (IllegalStateException e) {
+			fireFailEvent(FailType.NETWORK_DENIED, null);
+			return;
+		} catch (IOException e) {
+			L.e(e);
+			fireFailEvent(FailType.IO_ERROR, e);
+			return;
+		} catch (OutOfMemoryError e) {
+			L.e(e);
+			fireFailEvent(FailType.OUT_OF_MEMORY, e);
+			return;
+		} catch (Throwable e) {
+			L.e(e);
+			fireFailEvent(FailType.UNKNOWN, e);
+			return;
 		} finally {
 			loadFromUriLock.unlock();
 		}
 
-		DisplayBitmapTask displayBitmapTask = new DisplayBitmapTask(bmp, imageLoadingInfo, engine, loadedFrom);
+		DisplayBitmapTask displayBitmapTask = new DisplayBitmapTask(bitmap, imageLoadingInfo, engine, info.loadedFrom);
 		runTask(displayBitmapTask, syncLoading, handler, engine);
 	}
 
@@ -212,143 +201,191 @@ final class LoadAndDisplayImageTask implements Runnable, IoUtils.CopyListener {
 		return false;
 	}
 
-	private Bitmap tryLoadBitmap() throws TaskCancelledException {
-		Bitmap bitmap = null;
-		try {
-			File imageFile = configuration.bitmapDiskCache.get(memoryCacheKey);
-			if (imageFile != null && imageFile.exists()) {
-				L.d(LOG_LOAD_IMAGE_FROM_BITMAP_DISK_CACHE, memoryCacheKey);
-				loadedFrom = LoadedFrom.BITMAP_DISK_CACHE;
+	private class LoadingInfo {
+		public String imageUri;
+		public String originalImageUri;
+		public LoadedFrom loadedFrom;
 
-				checkTaskNotActual();
-				bitmap = decodeImage(Scheme.FILE.wrap(imageFile.getAbsolutePath()));
+		public LoadingInfo(String imageUri, String originalImageUri, LoadedFrom loadedFrom) {
+			this.imageUri = imageUri;
+			this.originalImageUri = originalImageUri;
+			this.loadedFrom = loadedFrom;
+		}
+	}
 
-				if (bitmap != null && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
-					return bitmap;
-				}
+	private Bitmap loadImage(LoadingInfo info) throws TaskCancelledException, IOException {
+		Bitmap bitmap = loadImageFromMemoryCache(info);
+		if (bitmap != null && options.shouldPostProcess()) {
+			L.d(LOG_POSTPROCESS_IMAGE, memoryCacheKey);
+			bitmap = options.getPostProcessor().process(bitmap);
+			if (bitmap == null) {
+				L.e(ERROR_POST_PROCESSOR_NULL, memoryCacheKey);
 			}
-
-			imageFile = configuration.diskCache.get(uri);
-			if (imageFile != null && imageFile.exists()) {
-				L.d(LOG_LOAD_IMAGE_FROM_DISK_CACHE, memoryCacheKey);
-				loadedFrom = LoadedFrom.DISC_CACHE;
-
-				checkTaskNotActual();
-				bitmap = decodeImage(Scheme.FILE.wrap(imageFile.getAbsolutePath()));
-				if (bitmap != null && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
-					if (options.isCacheBitmapOnDisk()) {
-						configuration.bitmapDiskCache.save(memoryCacheKey, bitmap);
-					}
-					return bitmap;
-				}
-			}
-
-			L.d(LOG_LOAD_IMAGE_FROM_NETWORK, memoryCacheKey);
-			loadedFrom = LoadedFrom.NETWORK;
-
-			String imageUriForDecoding = uri;
-			if (options.isCacheOnDisk() && tryCacheImageOnDisk()) {
-				imageFile = configuration.diskCache.get(uri);
-				if (imageFile != null) {
-					imageUriForDecoding = Scheme.FILE.wrap(imageFile.getAbsolutePath());
-				}
-			}
-
-			checkTaskNotActual();
-			bitmap = decodeImage(imageUriForDecoding);
-
-			if (bitmap != null && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
-				if (options.isCacheBitmapOnDisk()) {
-					configuration.bitmapDiskCache.save(memoryCacheKey, bitmap);
-				}
-				return bitmap;
-			}
-
-			fireFailEvent(FailType.DECODING_ERROR, null);
-		} catch (IllegalStateException e) {
-			fireFailEvent(FailType.NETWORK_DENIED, null);
-		} catch (TaskCancelledException e) {
-			throw e;
-		} catch (IOException e) {
-			L.e(e);
-			fireFailEvent(FailType.IO_ERROR, e);
-		} catch (OutOfMemoryError e) {
-			L.e(e);
-			fireFailEvent(FailType.OUT_OF_MEMORY, e);
-		} catch (Throwable e) {
-			L.e(e);
-			fireFailEvent(FailType.UNKNOWN, e);
 		}
 		return bitmap;
 	}
 
-	private Bitmap decodeImage(String imageUri) throws IOException {
-		ViewScaleType viewScaleType = imageAware.getScaleType();
-		ImageDecodingInfo decodingInfo = new ImageDecodingInfo(memoryCacheKey, imageUri, uri, targetSize, viewScaleType,
-				getDownloader(), options);
-		return decoder.decode(decodingInfo);
+	private Bitmap loadImageFromMemoryCache(LoadingInfo info)
+			throws TaskCancelledException, IOException {
+		Bitmap bitmap = configuration.memoryCache.get(memoryCacheKey);
+		if ((bitmap != null) && !bitmap.isRecycled()) {
+			info.loadedFrom = LoadedFrom.MEMORY_CACHE;
+			L.d(LOG_GET_IMAGE_FROM_MEMORY_CACHE_AFTER_WAITING, memoryCacheKey);
+			return bitmap;
+		}
+
+		bitmap = loadImageFromBitmapDiscCache(info);
+		if (bitmap != null) {
+			if (options.isCacheInMemory()) {
+				L.d(LOG_CACHE_IMAGE_IN_MEMORY, memoryCacheKey);
+				configuration.memoryCache.put(memoryCacheKey, bitmap);
+			}
+		}
+
+		return bitmap;
+	}
+
+	private Bitmap loadImageFromBitmapDiscCache(LoadingInfo info)
+			throws TaskCancelledException, IOException {
+		File imageFile = configuration.bitmapDiskCache.get(memoryCacheKey);
+		if (imageFile != null && imageFile.exists()) {
+			L.d(LOG_LOAD_IMAGE_FROM_BITMAP_DISK_CACHE, memoryCacheKey);
+			info.loadedFrom = LoadedFrom.BITMAP_DISK_CACHE;
+
+			info.imageUri = Scheme.FILE.wrap(imageFile.getAbsolutePath());
+		}
+
+		InputStream imageStream = downloadImage(info);
+
+		checkTaskNotActual();
+		ImageDecodingInfo decodingInfo = new ImageDecodingInfo(memoryCacheKey, info.imageUri,
+				info.originalImageUri, targetSize, imageAware.getScaleType(), imageStream, options);
+
+		Bitmap bitmap = null;
+		try {
+			bitmap = decoder.decode(decodingInfo);
+			if (bitmap == null) {
+				return bitmap;
+			}
+		} finally {
+			IoUtils.closeSilently(imageStream);
+		}
+
+		checkTaskNotActual();
+		checkTaskInterrupted();
+
+		if (info.loadedFrom != LoadedFrom.BITMAP_DISK_CACHE) {
+			if (options.shouldPreProcess()) {
+				L.d(LOG_PREPROCESS_IMAGE, memoryCacheKey);
+				bitmap = options.getPreProcessor().process(bitmap);
+				if (bitmap == null) {
+					L.e(ERROR_PRE_PROCESSOR_NULL, memoryCacheKey);
+				}
+			}
+
+			if ((bitmap != null) && options.isCacheBitmapOnDisk()) {
+				tryCacheBitmapOnDisk(bitmap);
+			}
+		}
+
+		return bitmap;
+	}
+	/** @return <b>true</b> - if bitmap was cached successfully; <b>false</b> - otherwise */
+	private boolean tryCacheBitmapOnDisk(Bitmap bitmap)
+			throws TaskCancelledException {
+		L.d(LOG_CACHE_BITMAP_ON_DISK, memoryCacheKey);
+
+		boolean saved = false;
+		try {
+			saved = configuration.bitmapDiskCache.save(memoryCacheKey, bitmap);
+		} catch (IOException e) {
+			saved = false;
+			L.e(e);
+		}
+		return saved;
+	}
+
+	private InputStream downloadImage(LoadingInfo info)
+			throws TaskCancelledException, IOException {
+		if (info.loadedFrom != LoadedFrom.BITMAP_DISK_CACHE) {
+			File imageFile = configuration.diskCache.get(info.imageUri);
+			if (imageFile != null && imageFile.exists()) {
+				L.d(LOG_LOAD_IMAGE_FROM_DISK_CACHE, memoryCacheKey);
+				info.loadedFrom = LoadedFrom.DISC_CACHE;
+
+				info.imageUri = Scheme.FILE.wrap(imageFile.getAbsolutePath());
+			}
+		}
+
+		checkTaskNotActual();
+		InputStream imageStream = getDownloader().getStream(info.imageUri,
+				options.getExtraForDownloader());
+
+		if (options.isCacheOnDisk() && (info.loadedFrom == LoadedFrom.NETWORK) &&
+				(imageStream != null)) {
+			L.d(LOG_CACHE_IMAGE_ON_DISK, memoryCacheKey);
+
+			tryCacheImageOnDisk(info, imageStream);
+			File imageFile = configuration.diskCache.get(info.imageUri);
+			if (imageFile != null && imageFile.exists()) {
+				info.imageUri = Scheme.FILE.wrap(imageFile.getAbsolutePath());
+				IoUtils.closeSilently(imageStream);
+				return getDownloader().getStream(info.imageUri, options.getExtraForDownloader());
+			} else {
+				imageStream.reset();
+			}
+		}
+
+		return imageStream;
 	}
 
 	/** @return <b>true</b> - if image was downloaded successfully; <b>false</b> - otherwise */
-	private boolean tryCacheImageOnDisk() throws TaskCancelledException {
+	private boolean tryCacheImageOnDisk(LoadingInfo info, InputStream imageStream) {
 		L.d(LOG_CACHE_IMAGE_ON_DISK, memoryCacheKey);
 
-		boolean loaded;
+		boolean saved = false;
 		try {
-			loaded = downloadImage();
-			if (loaded) {
-				int width = configuration.maxImageWidthForDiskCache;
-				int height = configuration.maxImageHeightForDiskCache;
-				if (width > 0 || height > 0) {
-					L.d(LOG_RESIZE_CACHED_IMAGE_FILE, memoryCacheKey);
-					resizeAndSaveImage(width, height); // TODO : process boolean result
-				}
+			int width = configuration.maxImageWidthForDiskCache;
+			int height = configuration.maxImageHeightForDiskCache;
+			if (width > 0 || height > 0) {
+				L.d(LOG_RESIZE_CACHED_IMAGE_FILE, memoryCacheKey);
+				saved = resizeAndSaveImage(info, imageStream, width, height);
+			}
+
+			if (!saved) {
+				saved = configuration.diskCache.save(info.imageUri, imageStream, this);
 			}
 		} catch (IOException e) {
+			saved = false;
 			L.e(e);
-			loaded = false;
 		}
-		return loaded;
-	}
-
-	private boolean downloadImage() throws IOException {
-		InputStream is = getDownloader().getStream(uri, options.getExtraForDownloader());
-		if (is == null) {
-			L.e(ERROR_NO_IMAGE_STREAM, memoryCacheKey);
-			return false;
-		} else {
-			try {
-				return configuration.diskCache.save(uri, is, this);
-			} finally {
-				IoUtils.closeSilently(is);
-			}
-		}
+		return saved;
 	}
 
 	/** Decodes image file into Bitmap, resize it and save it back */
-	private boolean resizeAndSaveImage(int maxWidth, int maxHeight) throws IOException {
+	private boolean resizeAndSaveImage(LoadingInfo info, InputStream imageStream,
+			int maxWidth, int maxHeight) throws IOException {
 		// Decode image file, compress and re-save it
 		boolean saved = false;
-		File targetFile = configuration.diskCache.get(uri);
-		if (targetFile != null && targetFile.exists()) {
-			ImageSize targetImageSize = new ImageSize(maxWidth, maxHeight);
-			DisplayImageOptions specialOptions = new DisplayImageOptions.Builder().cloneFrom(options)
-					.imageScaleType(ImageScaleType.IN_SAMPLE_INT).build();
-			ImageDecodingInfo decodingInfo = new ImageDecodingInfo(memoryCacheKey,
-					Scheme.FILE.wrap(targetFile.getAbsolutePath()), uri, targetImageSize, ViewScaleType.FIT_INSIDE,
-					getDownloader(), specialOptions);
-			Bitmap bmp = decoder.decode(decodingInfo);
-			if (bmp != null && configuration.processorForDiskCache != null) {
-				L.d(LOG_PROCESS_IMAGE_BEFORE_CACHE_ON_DISK, memoryCacheKey);
-				bmp = configuration.processorForDiskCache.process(bmp);
-				if (bmp == null) {
-					L.e(ERROR_PROCESSOR_FOR_DISK_CACHE_NULL, memoryCacheKey);
-				}
+		ImageSize targetImageSize = new ImageSize(maxWidth, maxHeight);
+		DisplayImageOptions specialOptions = new DisplayImageOptions.Builder().cloneFrom(options)
+			.imageScaleType(ImageScaleType.IN_SAMPLE_INT).build();
+		ImageDecodingInfo decodingInfo = new ImageDecodingInfo(memoryCacheKey,
+				info.imageUri, info.originalImageUri, targetImageSize, ViewScaleType.FIT_INSIDE,
+				imageStream, specialOptions);
+
+		Bitmap bitmap = decoder.decode(decodingInfo);
+
+		if (bitmap != null && configuration.processorForDiskCache != null) {
+			L.d(LOG_PROCESS_IMAGE_BEFORE_CACHE_ON_DISK, memoryCacheKey);
+			bitmap = configuration.processorForDiskCache.process(bitmap);
+			if (bitmap == null) {
+				L.e(ERROR_PROCESSOR_FOR_DISK_CACHE_NULL, memoryCacheKey);
 			}
-			if (bmp != null) {
-				saved = configuration.diskCache.save(uri, bmp);
-				bmp.recycle();
-			}
+		}
+		if (bitmap != null) {
+			saved = configuration.diskCache.save(info.imageUri, bitmap);
+			bitmap.recycle();
 		}
 		return saved;
 	}

@@ -71,19 +71,16 @@ public class BaseImageDecoder implements ImageDecoder {
 		Bitmap decodedBitmap;
 		ImageFileInfo imageInfo;
 
-		InputStream imageStream = getImageStream(decodingInfo);
+		InputStream imageStream = decodingInfo.getImageStream();
 		if (imageStream == null) {
 			L.e(ERROR_NO_IMAGE_STREAM, decodingInfo.getImageKey());
 			return null;
 		}
-		try {
-			imageInfo = defineImageSizeAndRotation(imageStream, decodingInfo);
-			imageStream.reset();
-			Options decodingOptions = prepareDecodingOptions(imageInfo.imageSize, decodingInfo);
-			decodedBitmap = BitmapFactory.decodeStream(imageStream, null, decodingOptions);
-		} finally {
-			IoUtils.closeSilently(imageStream);
-		}
+
+		imageInfo = defineImageSizeAndRotation(imageStream, decodingInfo);
+		imageStream.reset();
+		Options decodingOptions = prepareDecodingOptions(imageInfo.imageSize, decodingInfo);
+		decodedBitmap = BitmapFactory.decodeStream(imageStream, null, decodingOptions);
 
 		if (decodedBitmap == null) {
 			L.e(ERROR_CANT_DECODE_IMAGE, decodingInfo.getImageKey());
@@ -92,10 +89,6 @@ public class BaseImageDecoder implements ImageDecoder {
 					imageInfo.exif.flipHorizontal);
 		}
 		return decodedBitmap;
-	}
-
-	protected InputStream getImageStream(ImageDecodingInfo decodingInfo) throws IOException {
-		return decodingInfo.getDownloader().getStream(decodingInfo.getImageUri(), decodingInfo.getExtraForDownloader());
 	}
 
 	protected ImageFileInfo defineImageSizeAndRotation(InputStream imageStream, ImageDecodingInfo decodingInfo)

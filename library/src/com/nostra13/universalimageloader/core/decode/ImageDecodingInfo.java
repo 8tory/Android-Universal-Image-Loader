@@ -15,6 +15,8 @@
  *******************************************************************************/
 package com.nostra13.universalimageloader.core.decode;
 
+import java.io.InputStream;
+
 import android.annotation.TargetApi;
 import android.graphics.BitmapFactory.Options;
 import android.os.Build;
@@ -36,29 +38,25 @@ public class ImageDecodingInfo {
 	private final String imageKey;
 	private final String imageUri;
 	private final String originalImageUri;
+	private final InputStream imageStream;
 	private final ImageSize targetSize;
 
 	private final ImageScaleType imageScaleType;
 	private final ViewScaleType viewScaleType;
 
-	private final ImageDownloader downloader;
-	private final Object extraForDownloader;
-
 	private final boolean considerExifParams;
 	private final Options decodingOptions;
 
 	public ImageDecodingInfo(String imageKey, String imageUri, String originalImageUri, ImageSize targetSize, ViewScaleType viewScaleType,
-							 ImageDownloader downloader, DisplayImageOptions displayOptions) {
+							 InputStream imageStream, DisplayImageOptions displayOptions) {
 		this.imageKey = imageKey;
 		this.imageUri = imageUri;
 		this.originalImageUri = originalImageUri;
+		this.imageStream = imageStream;
 		this.targetSize = targetSize;
 
 		this.imageScaleType = displayOptions.getImageScaleType();
 		this.viewScaleType = viewScaleType;
-
-		this.downloader = downloader;
-		this.extraForDownloader = displayOptions.getExtraForDownloader();
 
 		considerExifParams = displayOptions.isConsiderExifParams();
 		decodingOptions = new Options();
@@ -128,14 +126,9 @@ public class ImageDecodingInfo {
 		return viewScaleType;
 	}
 
-	/** @return Downloader for image loading */
-	public ImageDownloader getDownloader() {
-		return downloader;
-	}
-
 	/** @return Auxiliary object for downloader */
-	public Object getExtraForDownloader() {
-		return extraForDownloader;
+	public InputStream getImageStream() {
+		return imageStream;
 	}
 
 	/** @return <b>true</b> - if EXIF params of image should be considered; <b>false</b> - otherwise */
