@@ -34,7 +34,7 @@ import com.nostra13.universalimageloader.core.download.ImageDownloader;
 public class ImageDecodingInfo {
 
 	private final String imageKey;
-	private String imageUri;
+	private final String imageUri;
 	private final String originalImageUri;
 	private final ImageSize targetSize;
 
@@ -100,10 +100,6 @@ public class ImageDecodingInfo {
 	/** @return Image URI for decoding (usually image from disk cache) */
 	public String getImageUri() {
 		return imageUri;
-	}
-
-	public void setImageUri(String uri) {
-		imageUri = uri;
 	}
 
 	/** @return The original image URI which was passed to ImageLoader */
