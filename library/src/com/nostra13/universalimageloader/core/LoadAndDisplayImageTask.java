@@ -291,18 +291,19 @@ final class LoadAndDisplayImageTask implements Runnable, IoUtils.CopyListener {
 		return bitmap;
 	}
 	/** @return <b>true</b> - if bitmap was cached successfully; <b>false</b> - otherwise */
-	private boolean tryCacheBitmapOnDisk(Bitmap bitmap)
-			throws TaskCancelledException {
-		L.d(LOG_CACHE_BITMAP_ON_DISK, memoryCacheKey);
-
-		boolean saved = false;
-		try {
-			saved = configuration.bitmapDiskCache.save(memoryCacheKey, bitmap);
-		} catch (IOException e) {
-			saved = false;
-			L.e(e);
-		}
-		return saved;
+	private void tryCacheBitmapOnDisk(final Bitmap bitmap) {
+		Runnable r = new Runnable() {
+			@Override
+			public void run() {
+				L.d(LOG_CACHE_BITMAP_ON_DISK, memoryCacheKey);
+				try {
+					configuration.bitmapDiskCache.save(memoryCacheKey, bitmap);
+				} catch (IOException e) {
+					L.e(e);
+				}
+			}
+		};
+		engine.fireCallback(r);
 	}
 
 	private InputStream downloadImage(LoadingInfo info)
