@@ -72,7 +72,7 @@ class ImageLoaderEngine {
 				File image = configuration.diskCache.get(task.getLoadingUri());
 				boolean isImageCachedOnDisk = image != null && image.exists();
 				initExecutorsIfNeed();
-				if (isImageCachedOnDisk) {
+				if (!task.isCacheOnDisk() || isImageCachedOnDisk) {
 					taskExecutorForCachedImages.execute(task);
 				} else {
 					taskExecutor.execute(task);

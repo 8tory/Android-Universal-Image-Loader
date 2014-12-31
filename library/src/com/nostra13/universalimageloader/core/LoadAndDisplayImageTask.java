@@ -521,6 +521,10 @@ final class LoadAndDisplayImageTask implements Runnable, IoUtils.CopyListener {
 		return uri;
 	}
 
+	boolean isCacheOnDisk() {
+		return options.isCacheOnDisk();
+	}
+
 	static void runTask(Runnable r, boolean sync, Handler handler, ImageLoaderEngine engine) {
 		if (sync) {
 			r.run();
