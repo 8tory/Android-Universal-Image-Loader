@@ -26,6 +26,7 @@ import com.nostra13.universalimageloader.core.download.ImageDownloader.Scheme;
 import com.nostra13.universalimageloader.utils.ImageSizeUtils;
 import com.nostra13.universalimageloader.utils.IoUtils;
 import com.nostra13.universalimageloader.utils.L;
+import com.nostra13.universalimageloader.cache.memory.BaseInfoCache;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -70,6 +71,7 @@ public class BaseImageDecoder implements ImageDecoder {
 	public Bitmap decode(ImageDecodingInfo decodingInfo) throws IOException {
 		Bitmap decodedBitmap;
 		ImageFileInfo imageInfo;
+		String imageUri = decodingInfo.getImageUri();
 
 		InputStream imageStream = decodingInfo.getImageStream();
 		if (imageStream == null) {
@@ -77,7 +79,11 @@ public class BaseImageDecoder implements ImageDecoder {
 			return null;
 		}
 
-		imageInfo = defineImageSizeAndRotation(imageStream, decodingInfo);
+		imageInfo = BaseInfoCache.get().get(imageUri);
+		if (imageInfo == null) {
+			imageInfo = defineImageSizeAndRotation(imageStream, decodingInfo);
+		}
+
 		imageStream.reset();
 		Options decodingOptions = prepareDecodingOptions(imageInfo.imageSize, decodingInfo);
 		decodedBitmap = BitmapFactory.decodeStream(imageStream, null, decodingOptions);
@@ -88,6 +94,9 @@ public class BaseImageDecoder implements ImageDecoder {
 			decodedBitmap = considerExactScaleAndOrientatiton(decodedBitmap, decodingInfo, imageInfo.exif.rotation,
 					imageInfo.exif.flipHorizontal);
 		}
+
+		BaseInfoCache.get().put(imageUri, imageInfo);
+
 		return decodedBitmap;
 	}
 
@@ -204,28 +213,28 @@ public class BaseImageDecoder implements ImageDecoder {
 		return finalBitmap;
 	}
 
-	protected static class ExifInfo {
+	public static class ExifInfo {
 
 		public final int rotation;
 		public final boolean flipHorizontal;
 
-		protected ExifInfo() {
+		public ExifInfo() {
 			this.rotation = 0;
 			this.flipHorizontal = false;
 		}
 
-		protected ExifInfo(int rotation, boolean flipHorizontal) {
+		public ExifInfo(int rotation, boolean flipHorizontal) {
 			this.rotation = rotation;
 			this.flipHorizontal = flipHorizontal;
 		}
 	}
 
-	protected static class ImageFileInfo {
+	public static class ImageFileInfo {
 
 		public final ImageSize imageSize;
 		public final ExifInfo exif;
 
-		protected ImageFileInfo(ImageSize imageSize, ExifInfo exif) {
+		public ImageFileInfo(ImageSize imageSize, ExifInfo exif) {
 			this.imageSize = imageSize;
 			this.exif = exif;
 		}
