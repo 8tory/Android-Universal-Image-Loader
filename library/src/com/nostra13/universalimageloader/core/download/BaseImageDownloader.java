@@ -43,6 +43,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import com.nostra13.universalimageloader.utils.L;
 
 /**
  * Provides retrieving of {@link InputStream} of image by URI from network or file system or app resources.<br />
@@ -184,7 +185,9 @@ public class BaseImageDownloader implements ImageDownloader {
 	 * @throws IOException if some I/O error occurs reading from file system
 	 */
 	protected InputStream getStreamFromFile(String imageUri, Object extra) throws IOException {
-		String filePath = Scheme.FILE.crop(imageUri);
+		String filePath = Uri.decode(Scheme.FILE.crop(imageUri));
+		L.d("imageUri: %s", Scheme.FILE.crop(imageUri));
+		L.d("filePath: %s", filePath);
 		if (isVideoFileUri(imageUri)) {
 			return getVideoThumbnailStream(filePath);
 		} else {

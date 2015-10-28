@@ -399,6 +399,6 @@ public class ContentImageDecoder extends BaseImageDecoder {
     }
 
     protected ExifInfo getExifInfoFromFile(String imageUri, Object extra) {
-        return defineExifOrientation(imageUri);
+        return defineExifOrientation(Uri.decode(imageUri));
     }
 }
